@@ -291,6 +291,14 @@ static void idevice_event_cb(const idevice_event_t *event, void *userdata)
 	}
 }
 
+void idevicerestore_notify_device_event(const idevice_event_t *event, void* userdata)
+{
+	struct idevicerestore_client_t *client = (struct idevicerestore_client_t*)userdata;
+	if (client && !client->use_internal_device_event) {
+		idevice_event_cb(event, userdata);
+	}
+}
+
 static void irecv_event_cb(const irecv_device_event_t* event, void *userdata)
 {
 	struct idevicerestore_client_t *client = (struct idevicerestore_client_t*)userdata;
@@ -343,6 +351,14 @@ static void irecv_event_cb(const irecv_device_event_t* event, void *userdata)
 	}
 }
 
+void idevicerestore_notify_irecovery_device_event(const irecv_device_event_t* event, void* userdata)
+{
+	struct idevicerestore_client_t *client = (struct idevicerestore_client_t*)userdata;
+	if (client && !client->use_internal_device_event) {
+		irecv_event_cb(event, userdata);
+	}
+}
+
 int build_identity_check_components_in_ipsw(plist_t build_identity, ipsw_archive_t ipsw);
 
 int idevicerestore_start(struct idevicerestore_client_t* client)
@@ -379,13 +395,15 @@ int idevicerestore_start(struct idevicerestore_client_t* client)
 
 	idevicerestore_progress(client, RESTORE_STEP_DETECT, 0.0);
 
-	if (!client->irecv_e_ctx) {
-		irecv_device_event_subscribe(&client->irecv_e_ctx, irecv_event_cb, client);
-	}
+	if (client->use_internal_device_event) {
+		if (!client->irecv_e_ctx) {
+			irecv_device_event_subscribe(&client->irecv_e_ctx, irecv_event_cb, client);
+		}
 
-	if (!client->idevice_e_ctx) {
-		idevice_event_subscribe(idevice_event_cb, client);
-		client->idevice_e_ctx = idevice_event_cb;
+		if (!client->idevice_e_ctx) {
+			idevice_event_subscribe(idevice_event_cb, client);
+			client->idevice_e_ctx = idevice_event_cb;
+		}
 	}
 
 	// check which mode the device is currently in so we know where to start
@@ -1738,6 +1756,13 @@ void idevicerestore_set_log_callback(struct idevicerestore_client_t* client, ide
 	idevicerestore_log_callback = cbfunc;
 	idevicerestore_log_callback_data = userdata;
 	logger_set_print_func(cbfunc ? idevicerestore_log_callback_adapter : NULL);
+}
+
+void idevicerestore_set_use_internal_device_event(struct idevicerestore_client_t* client, uint8_t use_internal)
+{
+	if (!client)
+		return;
+	client->use_internal_device_event = use_internal;
 }
 
 const char* idevicerestore_get_error(void)

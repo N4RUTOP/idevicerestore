@@ -128,6 +128,7 @@ struct idevicerestore_client_t {
 	char* filesystem;
 	int delete_fs;
 	int async_err;
+	uint8_t use_internal_device_event;
 };
 
 extern int global_quit_flag;

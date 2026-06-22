@@ -44,6 +44,7 @@ extern "C" {
 #include <stdint.h>
 #include <plist/plist.h>
 #include <libirecovery.h>
+#include <libimobiledevice/libimobiledevice.h>
 
 // the flag with value 1 is reserved for internal use only. don't use it.
 #define FLAG_DEBUG           (1 << 1)
@@ -100,8 +101,13 @@ IDEVICERESTORE_API void idevicerestore_set_ipsw(struct idevicerestore_client_t* 
 IDEVICERESTORE_API void idevicerestore_set_cache_path(struct idevicerestore_client_t* client, const char* path);
 IDEVICERESTORE_API void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client, idevicerestore_progress_cb_t cbfunc, void* userdata);
 IDEVICERESTORE_API void idevicerestore_set_log_callback(struct idevicerestore_client_t* client, idevicerestore_log_cb_t cbfunc, void* userdata);
+IDEVICERESTORE_API void idevicerestore_set_use_internal_device_event(struct idevicerestore_client_t* client, uint8_t use_internal);
+
 IDEVICERESTORE_API int idevicerestore_start(struct idevicerestore_client_t* client);
 IDEVICERESTORE_API const char* idevicerestore_get_error(void);
+
+IDEVICERESTORE_API void idevicerestore_notify_irecovery_device_event(const irecv_device_event_t* event, void* userdata);
+IDEVICERESTORE_API void idevicerestore_notify_device_event(const idevice_event_t *event, void* userdata);
 
 // ********* Internal API *********
 irecv_device_t get_irecv_device(struct idevicerestore_client_t* client);
