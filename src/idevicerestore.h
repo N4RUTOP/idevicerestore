@@ -28,6 +28,20 @@
 extern "C" {
 #endif
 
+#ifdef IDEVICERESTORE_EXPORT_API
+#ifdef __APPLE__
+#define IDEVICERESTORE_API 
+#else
+#define IDEVICERESTORE_API __declspec(dllexport)
+#endif
+#else
+#ifdef __APPLE__
+#define IDEVICERESTORE_API __attribute__((visibility("default")))
+#else
+#define IDEVICERESTORE_API __declspec(dllimport)
+#endif
+#endif
+
 #include <stdio.h>
 #include <stdint.h>
 #include <plist/plist.h>
@@ -76,19 +90,21 @@ extern const uint32_t lpol_file_length;
 
 typedef void (*idevicerestore_progress_cb_t)(int step, double step_progress, void* userdata);
 
-struct idevicerestore_client_t* idevicerestore_client_new(void);
-void idevicerestore_client_free(struct idevicerestore_client_t* client);
+// ********* Exported API *********
+IDEVICERESTORE_API struct idevicerestore_client_t* idevicerestore_client_new(void);
+IDEVICERESTORE_API void idevicerestore_client_free(struct idevicerestore_client_t* client);
 
-void idevicerestore_set_ecid(struct idevicerestore_client_t* client, uint64_t ecid);
-void idevicerestore_set_udid(struct idevicerestore_client_t* client, const char* udid);
-void idevicerestore_set_flags(struct idevicerestore_client_t* client, int flags);
-void idevicerestore_set_ipsw(struct idevicerestore_client_t* client, const char* path);
-void idevicerestore_set_cache_path(struct idevicerestore_client_t* client, const char* path);
-void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client, idevicerestore_progress_cb_t cbfunc, void* userdata);
+IDEVICERESTORE_API void idevicerestore_set_ecid(struct idevicerestore_client_t* client, uint64_t ecid);
+IDEVICERESTORE_API void idevicerestore_set_udid(struct idevicerestore_client_t* client, const char* udid);
+IDEVICERESTORE_API void idevicerestore_set_flags(struct idevicerestore_client_t* client, int flags);
+IDEVICERESTORE_API void idevicerestore_set_ipsw(struct idevicerestore_client_t* client, const char* path);
+IDEVICERESTORE_API void idevicerestore_set_cache_path(struct idevicerestore_client_t* client, const char* path);
+IDEVICERESTORE_API void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client, idevicerestore_progress_cb_t cbfunc, void* userdata);
 
-int idevicerestore_start(struct idevicerestore_client_t* client);
-const char* idevicerestore_get_error(void);
+IDEVICERESTORE_API int idevicerestore_start(struct idevicerestore_client_t* client);
+IDEVICERESTORE_API const char* idevicerestore_get_error(void);
 
+// ********* Internal API *********
 irecv_device_t get_irecv_device(struct idevicerestore_client_t* client);
 int get_ecid(struct idevicerestore_client_t* client, uint64_t* ecid);
 int is_image4_supported(struct idevicerestore_client_t* client);
