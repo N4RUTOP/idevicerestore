@@ -1720,6 +1720,31 @@ void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client
 	client->progress_cb_data = userdata;
 }
 
+static idevicerestore_log_cb_t idevicerestore_log_callback = NULL;
+static void* idevicerestore_log_callback_data = NULL;
+
+static void idevicerestore_log_callback_adapter(enum loglevel level, const char* fmt, va_list ap)
+{
+	(void)level;
+	char message[4096];
+	vsnprintf(message, sizeof(message), fmt, ap);
+	idevicerestore_log_callback(message, idevicerestore_log_callback_data);
+}
+
+void idevicerestore_set_log_callback(struct idevicerestore_client_t* client, idevicerestore_log_cb_t cbfunc, void* userdata)
+{
+	if (!client)
+		return;
+	idevicerestore_log_callback = cbfunc;
+	idevicerestore_log_callback_data = userdata;
+	logger_set_print_func(cbfunc ? idevicerestore_log_callback_adapter : NULL);
+}
+
+const char* idevicerestore_get_error(void)
+{
+	return logger_get_error();
+}
+
 #ifndef IDEVICERESTORE_NOMAIN
 static struct idevicerestore_client_t* idevicerestore_client = NULL;
 

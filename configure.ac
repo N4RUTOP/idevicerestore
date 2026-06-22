@@ -36,7 +36,7 @@ AC_SUBST(LIBCURL_VERSION)
 # Checks for programs.
 AC_PROG_CC
 AM_PROG_CC_C_O
-LT_INIT
+LT_INIT([disable-static])
 
 # Checks for libraries.
 PKG_CHECK_MODULES(libirecovery, libirecovery-1.0 >= $LIBIRECOVERY_VERSION)

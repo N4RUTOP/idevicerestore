@@ -28,18 +28,16 @@
 extern "C" {
 #endif
 
-#ifdef IDEVICERESTORE_EXPORT_API
-#ifdef __APPLE__
-#define IDEVICERESTORE_API 
+#if defined(_WIN32)
+#  if defined(IDEVICERESTORE_EXPORT_API)
+#    define IDEVICERESTORE_API __declspec(dllexport)
+#  else
+#    define IDEVICERESTORE_API __declspec(dllimport)
+#  endif
+#elif defined(__GNUC__) && __GNUC__ >= 4
+#  define IDEVICERESTORE_API __attribute__((visibility("default")))
 #else
-#define IDEVICERESTORE_API __declspec(dllexport)
-#endif
-#else
-#ifdef __APPLE__
-#define IDEVICERESTORE_API __attribute__((visibility("default")))
-#else
-#define IDEVICERESTORE_API __declspec(dllimport)
-#endif
+#  define IDEVICERESTORE_API
 #endif
 
 #include <stdio.h>
@@ -89,6 +87,7 @@ extern const uint8_t lpol_file[22];
 extern const uint32_t lpol_file_length;
 
 typedef void (*idevicerestore_progress_cb_t)(int step, double step_progress, void* userdata);
+typedef void (*idevicerestore_log_cb_t)(const char* message, void* userdata);
 
 // ********* Exported API *********
 IDEVICERESTORE_API struct idevicerestore_client_t* idevicerestore_client_new(void);
@@ -100,7 +99,7 @@ IDEVICERESTORE_API void idevicerestore_set_flags(struct idevicerestore_client_t*
 IDEVICERESTORE_API void idevicerestore_set_ipsw(struct idevicerestore_client_t* client, const char* path);
 IDEVICERESTORE_API void idevicerestore_set_cache_path(struct idevicerestore_client_t* client, const char* path);
 IDEVICERESTORE_API void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client, idevicerestore_progress_cb_t cbfunc, void* userdata);
-
+IDEVICERESTORE_API void idevicerestore_set_log_callback(struct idevicerestore_client_t* client, idevicerestore_log_cb_t cbfunc, void* userdata);
 IDEVICERESTORE_API int idevicerestore_start(struct idevicerestore_client_t* client);
 IDEVICERESTORE_API const char* idevicerestore_get_error(void);
 

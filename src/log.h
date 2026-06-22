@@ -37,6 +37,7 @@ extern enum loglevel log_level;
 typedef void (*logger_print_func)(enum loglevel level, const char*, va_list);
 
 void logger(enum loglevel level, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
+const char* logger_get_error(void);
 int logger_set_logfile(const char* path);
 void logger_set_print_func(logger_print_func func);
 void logger_dump_hex(enum loglevel level, const void* buf, size_t len);

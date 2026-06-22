@@ -40,6 +40,7 @@
 #include "log.h"
 
 static int stderr_enabled = 1;
+static char last_error[1024];
 
 enum loglevel log_level = LL_VERBOSE;
 enum loglevel print_level = LL_INFO;
@@ -131,6 +132,12 @@ void logger(enum loglevel level, const char *fmt, ...)
 
 	va_start(ap, fmt);
 	va_copy(ap2, ap);
+	if (level == LL_ERROR) {
+		va_list error_ap;
+		va_copy(error_ap, ap);
+		vsnprintf(last_error, sizeof(last_error), fmt, error_ap);
+		va_end(error_ap);
+	}
 	if (print_func) {
 		if (stderr_enabled) {
 			vfprintf(stderr, fs, ap);
@@ -150,6 +157,11 @@ void logger(enum loglevel level, const char *fmt, ...)
 	free(fs);
 
 	mutex_unlock(&log_mutex);
+}
+
+const char* logger_get_error(void)
+{
+	return last_error[0] ? last_error : NULL;
 }
 
 #if defined(__GNUC__) || defined(__clang__)
