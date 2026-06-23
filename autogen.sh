@@ -22,5 +22,5 @@ test -z "$srcdir" && srcdir=.
 )
 
 if [ -z "$NOCONFIGURE" ]; then
-  $srcdir/configure "$@"
+  $srcdir/configure --without-limera1n "$@"
 fi
