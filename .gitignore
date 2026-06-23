@@ -37,3 +37,4 @@ src/.libs
 src/idevicerestore
 src/idevicerestore.exe
 .vscode/
+.DS_Store
