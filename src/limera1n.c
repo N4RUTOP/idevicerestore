@@ -47,6 +47,7 @@ int limera1n_is_supported(struct irecv_device *device)
 
 int limera1n_exploit(struct irecv_device *device, irecv_client_t *pclient)
 {
+#ifdef HAVE_LIMERA1N
 	irecv_error_t err = IRECV_E_SUCCESS;
 	unsigned int i = 0;
 	unsigned char buf[0x800];
@@ -139,6 +140,6 @@ int limera1n_exploit(struct irecv_device *device, irecv_client_t *pclient)
 		logger(LL_ERROR, "Device reconnected in non-DFU mode\n");
 		return -1;
 	}
-
+#endif
 	return 0;
 }
