@@ -35,6 +35,11 @@
 #include <dirent.h>
 #include <zip.h>
 
+#ifdef WIN32
+#include <windows.h>
+#include <wchar.h>
+#endif
+
 #include <libimobiledevice-glue/sha.h>
 #include <libimobiledevice-glue/termcolors.h>
 #include <plist/plist.h>
@@ -48,6 +53,229 @@
 #define BUFSIZE 0x100000
 
 static int cancel_flag = 0;
+
+#ifdef WIN32
+static wchar_t* path_utf8_to_wchar(const char* path)
+{
+	wchar_t* wpath = NULL;
+	int len;
+
+	if (!path) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
+	if (len == 0) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	wpath = (wchar_t*)malloc(sizeof(wchar_t) * len);
+	if (!wpath) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, len) == 0) {
+		free(wpath);
+		errno = EINVAL;
+		return NULL;
+	}
+
+	return wpath;
+}
+
+static char* path_wchar_to_utf8(const wchar_t* wpath)
+{
+	char* path = NULL;
+	int len;
+
+	if (!wpath) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	len = WideCharToMultiByte(CP_UTF8, 0, wpath, -1, NULL, 0, NULL, NULL);
+	if (len == 0) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	path = (char*)malloc(len);
+	if (!path) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	if (WideCharToMultiByte(CP_UTF8, 0, wpath, -1, path, len, NULL, NULL) == 0) {
+		free(path);
+		errno = EINVAL;
+		return NULL;
+	}
+
+	return path;
+}
+
+static int ipsw_stat_path(const char* path, struct stat* st)
+{
+	wchar_t* wpath = path_utf8_to_wchar(path);
+	int res;
+
+	if (!wpath) {
+		return -1;
+	}
+
+	res = wstat(wpath, st);
+	free(wpath);
+	return res;
+}
+
+static FILE* ipsw_fopen_path(const char* path, const char* mode)
+{
+	wchar_t* wpath = path_utf8_to_wchar(path);
+	wchar_t* wmode = path_utf8_to_wchar(mode);
+	FILE* file = NULL;
+
+	if (!wpath || !wmode) {
+		free(wpath);
+		free(wmode);
+		return NULL;
+	}
+
+	file = _wfopen(wpath, wmode);
+	free(wpath);
+	free(wmode);
+	return file;
+}
+
+static int ipsw_access_path(const char* path, int mode)
+{
+	wchar_t* wpath = path_utf8_to_wchar(path);
+	DWORD attrs;
+
+	if (!wpath) {
+		return -1;
+	}
+
+	attrs = GetFileAttributesW(wpath);
+	free(wpath);
+	if (attrs == INVALID_FILE_ATTRIBUTES) {
+		errno = ENOENT;
+		return -1;
+	}
+	if ((mode & W_OK) && (attrs & FILE_ATTRIBUTE_READONLY)) {
+		errno = EACCES;
+		return -1;
+	}
+	return 0;
+}
+
+static int ipsw_remove_path(const char* path)
+{
+	wchar_t* wpath = path_utf8_to_wchar(path);
+	int res;
+
+	if (!wpath) {
+		return -1;
+	}
+
+	res = _wremove(wpath);
+	free(wpath);
+	return res;
+}
+
+static char* ipsw_realpath_path(const char* path, char* resolved)
+{
+	wchar_t* wpath = path_utf8_to_wchar(path);
+	wchar_t* wresolved = NULL;
+	char* utf8_resolved = NULL;
+	size_t len;
+
+	if (!wpath) {
+		return NULL;
+	}
+
+	len = GetFullPathNameW(wpath, 0, NULL, NULL);
+	if (len == 0) {
+		free(wpath);
+		errno = ENOENT;
+		return NULL;
+	}
+
+	wresolved = (wchar_t*)malloc(sizeof(wchar_t) * len);
+	if (!wresolved) {
+		free(wpath);
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	if (GetFullPathNameW(wpath, len, wresolved, NULL) == 0) {
+		free(wpath);
+		free(wresolved);
+		errno = ENOENT;
+		return NULL;
+	}
+
+	utf8_resolved = path_wchar_to_utf8(wresolved);
+	free(wpath);
+	free(wresolved);
+	if (!utf8_resolved) {
+		return NULL;
+	}
+
+	if (resolved) {
+		snprintf(resolved, PATH_MAX + 1, "%s", utf8_resolved);
+		free(utf8_resolved);
+		return resolved;
+	}
+
+	return utf8_resolved;
+}
+
+static struct zip* ipsw_zip_open_path(const char* path, int flags, int* errp)
+{
+	wchar_t* wpath = path_utf8_to_wchar(path);
+	zip_error_t error;
+	zip_source_t* source = NULL;
+	struct zip* zip = NULL;
+
+	if (!wpath) {
+		if (errp) {
+			*errp = ZIP_ER_INVAL;
+		}
+		return NULL;
+	}
+
+	zip_error_init(&error);
+	source = zip_source_win32w_create(wpath, 0, ZIP_LENGTH_TO_END, &error);
+	free(wpath);
+	if (!source) {
+		if (errp) {
+			*errp = zip_error_code_zip(&error);
+		}
+		zip_error_fini(&error);
+		return NULL;
+	}
+
+	zip = zip_open_from_source(source, flags, &error);
+	if (!zip) {
+		if (errp) {
+			*errp = zip_error_code_zip(&error);
+		}
+		zip_source_free(source);
+	}
+	zip_error_fini(&error);
+	return zip;
+}
+#else
+#define ipsw_stat_path(path, st) stat(path, st)
+#define ipsw_fopen_path(path, mode) fopen(path, mode)
+#define ipsw_access_path(path, mode) access(path, mode)
+#define ipsw_remove_path(path) remove(path)
+#define ipsw_realpath_path(path, resolved) realpath(path, resolved)
+#define ipsw_zip_open_path(path, flags, errp) zip_open(path, flags, errp)
+#endif
 
 static char* build_path(const char* path, const char* file)
 {
@@ -68,7 +296,7 @@ int ipsw_print_info(const char* path)
 {
 	struct stat fst;
 
-	if (stat(path, &fst) != 0) {
+	if (ipsw_stat_path(path, &fst) != 0) {
 		logger(LL_ERROR, "'%s': %s\n", path, strerror(errno));
 		return -1;
 	}
@@ -77,7 +305,7 @@ int ipsw_print_info(const char* path)
 
 	if (S_ISDIR(fst.st_mode)) {
 		snprintf(thepath, sizeof(thepath), "%s/BuildManifest.plist", path);
-		if (stat(thepath, &fst) != 0) {
+		if (ipsw_stat_path(thepath, &fst) != 0) {
 			logger(LL_ERROR, "'%s': %s\n", thepath, strerror(errno));
 			return -1;
 		}
@@ -85,7 +313,7 @@ int ipsw_print_info(const char* path)
 		snprintf(thepath, sizeof(thepath), "%s", path);
 	}
 
-	FILE* f = fopen(thepath, "r");
+	FILE* f = ipsw_fopen_path(thepath, "r");
 	if (!f) {
 		logger(LL_ERROR, "Can't open '%s': %s\n", thepath, strerror(errno));
 		return -1;
@@ -307,19 +535,21 @@ ipsw_archive_t ipsw_open(const char* ipsw)
 	}
 
 	struct stat fst;
-	if (stat(ipsw, &fst) != 0) {
+	if (ipsw_stat_path(ipsw, &fst) != 0) {
 		logger(LL_ERROR, "ipsw_open %s: %s\n", ipsw, strerror(errno));
+		free(archive);
 		return NULL;
 	}
 	if (S_ISDIR(fst.st_mode)) {
 		archive->zip = 0;
 	} else {
-		struct zip *zip = zip_open(ipsw, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw, err);
 			free(archive);
 			return NULL;
 		}
+		zip_close(zip);
 		archive->zip = 1;
 	}
 	archive->path = strdup(ipsw);
@@ -338,7 +568,7 @@ int ipsw_is_directory(const char* ipsw)
 {
 	struct stat fst;
 	memset(&fst, '\0', sizeof(fst));
-	if (stat(ipsw, &fst) != 0) {
+	if (ipsw_stat_path(ipsw, &fst) != 0) {
 		return 0;
 	}
 	return S_ISDIR(fst.st_mode);
@@ -353,7 +583,7 @@ int ipsw_get_file_size(ipsw_archive_t ipsw, const char* infile, uint64_t* size)
 
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return -1;
@@ -381,7 +611,7 @@ int ipsw_get_file_size(ipsw_archive_t ipsw, const char* infile, uint64_t* size)
 	} else {
 		char *filepath = build_path(ipsw->path, infile);
 		struct stat fst;
-		if (stat(filepath, &fst) != 0) {
+		if (ipsw_stat_path(filepath, &fst) != 0) {
 			free(filepath);
 			return -1;
 		}
@@ -406,7 +636,7 @@ int ipsw_extract_to_file_with_progress(ipsw_archive_t ipsw, const char* infile, 
 
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return -1;
@@ -445,7 +675,7 @@ int ipsw_extract_to_file_with_progress(ipsw_archive_t ipsw, const char* infile, 
 			return -1;
 		}
 
-		FILE* fd = fopen(outfile, "wb");
+		FILE* fd = ipsw_fopen_path(outfile, "wb");
 		if (fd == NULL) {
 			zip_fclose(zfile);
 			zip_unchange_all(zip);
@@ -502,20 +732,20 @@ int ipsw_extract_to_file_with_progress(ipsw_archive_t ipsw, const char* infile, 
 			ret = -1;
 			goto leave;
 		}
-		if (!realpath(filepath, actual_filepath)) {
+		if (!ipsw_realpath_path(filepath, actual_filepath)) {
 			logger(LL_ERROR, "realpath failed on %s: %s\n", filepath, strerror(errno));
 			ret = -1;
 			goto leave;
 		} else {
 			actual_outfile[0] = '\0';
-			if (realpath(outfile, actual_outfile) && (strcmp(actual_filepath, actual_outfile) == 0)) {
+			if (ipsw_realpath_path(outfile, actual_outfile) && (strcmp(actual_filepath, actual_outfile) == 0)) {
 				/* files are identical */
 				ret = 0;
 			} else {
 				if (actual_outfile[0] == '\0') {
 					strcpy(actual_outfile, outfile);
 				}
-				FILE *fi = fopen(actual_filepath, "rb");
+				FILE *fi = ipsw_fopen_path(actual_filepath, "rb");
 				if (!fi) {
 					logger(LL_ERROR, "fopen: %s: %s\n", actual_filepath, strerror(errno));
 					ret = -1;
@@ -528,7 +758,7 @@ int ipsw_extract_to_file_with_progress(ipsw_archive_t ipsw, const char* infile, 
 					ret = -1;
 					goto leave;
 				}
-				FILE *fo = fopen(actual_outfile, "wb");
+				FILE *fo = ipsw_fopen_path(actual_outfile, "wb");
 				if (!fo) {
 					fclose(fi);
 					logger(LL_ERROR, "fopen: %s: %s\n", actual_outfile, strerror(errno));
@@ -600,7 +830,7 @@ int ipsw_file_exists(ipsw_archive_t ipsw, const char* infile)
 
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return 0;
@@ -613,7 +843,7 @@ int ipsw_file_exists(ipsw_archive_t ipsw, const char* infile)
 		}
 	} else {
 		char *filepath = build_path(ipsw->path, infile);
-		if (access(filepath, R_OK) != 0) {
+		if (ipsw_access_path(filepath, R_OK) != 0) {
 			free(filepath);
 			return 0;
 		}
@@ -634,7 +864,7 @@ int ipsw_extract_to_memory(ipsw_archive_t ipsw, const char* infile, void** pbuff
 
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return -1;
@@ -704,7 +934,7 @@ int ipsw_extract_to_memory(ipsw_archive_t ipsw, const char* infile, void** pbuff
 		char *filepath = build_path(ipsw->path, infile);
 		struct stat fst;
 #ifdef WIN32
-		if (stat(filepath, &fst) != 0) {
+		if (ipsw_stat_path(filepath, &fst) != 0) {
 #else
 		if (lstat(filepath, &fst) != 0) {
 #endif
@@ -735,7 +965,7 @@ int ipsw_extract_to_memory(ipsw_archive_t ipsw, const char* infile, void** pbuff
 			}
 		} else {
 #endif
-			FILE *f = fopen(filepath, "rb");
+			FILE *f = ipsw_fopen_path(filepath, "rb");
 			if (!f) {
 				logger(LL_ERROR, "%s: fopen failed for %s: %s\n", __func__, filepath, strerror(errno));
 				free(filepath);
@@ -776,7 +1006,7 @@ int ipsw_extract_send(ipsw_archive_t ipsw, const char* infile, int blocksize, ip
 
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return -1;
@@ -842,7 +1072,7 @@ int ipsw_extract_send(ipsw_archive_t ipsw, const char* infile, int blocksize, ip
 		char *filepath = build_path(ipsw->path, infile);
 		struct stat fst;
 #ifdef WIN32
-		if (stat(filepath, &fst) != 0) {
+		if (ipsw_stat_path(filepath, &fst) != 0) {
 #else
 		if (lstat(filepath, &fst) != 0) {
 #endif
@@ -870,7 +1100,7 @@ int ipsw_extract_send(ipsw_archive_t ipsw, const char* infile, int blocksize, ip
 			send_callback(ctx, buffer, (size_t)rl, 0, 0);
 		} else {
 #endif
-			FILE *f = fopen(filepath, "rb");
+			FILE *f = ipsw_fopen_path(filepath, "rb");
 			if (!f) {
 				logger(LL_ERROR, "%s: fopen failed for %s: %s\n", __func__, filepath, strerror(errno));
 				free(filepath);
@@ -985,7 +1215,7 @@ static int ipsw_list_contents_recurse(ipsw_archive_t ipsw, const char *path, ips
 
 		struct stat st;
 #ifdef WIN32
-		ret = stat(fpath, &st);
+		ret = ipsw_stat_path(fpath, &st);
 #else
 		ret = lstat(fpath, &st);
 #endif
@@ -1021,7 +1251,7 @@ int ipsw_list_contents(ipsw_archive_t ipsw, ipsw_list_cb cb, void *ctx)
 
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return -1;
@@ -1325,7 +1555,7 @@ int ipsw_download_fw(const char *fwurl, unsigned char* isha1, const char* todir,
 
 	int need_dl = 0;
 	unsigned char zsha1[20] = {0, };
-	FILE* f = fopen(fwlfn, "rb");
+	FILE* f = ipsw_fopen_path(fwlfn, "rb");
 	if (f) {
 		if (memcmp(zsha1, isha1, 20) != 0) {
 			logger(LL_INFO, "Verifying '%s'...\n", fwlfn);
@@ -1349,7 +1579,7 @@ int ipsw_download_fw(const char *fwurl, unsigned char* isha1, const char* todir,
 			logger(LL_ERROR, "Can't download '%s' because it needs a purchase.\n", fwfn);
 			res = -3;
 		} else {
-			remove(fwlfn);
+			ipsw_remove_path(fwlfn);
 			logger(LL_INFO, "Downloading firmware (%s)\n", fwurl);
 			download_to_file(fwurl, fwlfn, 1);
 			if (global_quit_flag > 0) {
@@ -1358,7 +1588,7 @@ int ipsw_download_fw(const char *fwurl, unsigned char* isha1, const char* todir,
 			}
 			if (memcmp(isha1, zsha1, 20) != 0) {
 				logger(LL_INFO, "Verifying '%s'...\n", fwlfn);
-				FILE* f = fopen(fwlfn, "rb");
+				FILE* f = ipsw_fopen_path(fwlfn, "rb");
 				if (f) {
 					register_progress('SHA1', "Verifying");
 					if (sha1_verify_fp(f, isha1)) {
@@ -1372,7 +1602,7 @@ int ipsw_download_fw(const char *fwurl, unsigned char* isha1, const char* todir,
 
 					// make sure to remove invalid files
 					if (res < 0)
-						remove(fwlfn);
+						ipsw_remove_path(fwlfn);
 				} else {
 					logger(LL_ERROR, "Can't open '%s' for checksum verification\n", fwlfn);
 					res = -5;
@@ -1428,7 +1658,7 @@ ipsw_file_handle_t ipsw_file_open(ipsw_archive_t ipsw, const char* path)
 	ipsw_file_handle_t handle = (ipsw_file_handle_t)calloc(1, sizeof(struct ipsw_file_handle));
 	if (ipsw->zip) {
 		int err = 0;
-		struct zip *zip = zip_open(ipsw->path, 0, &err);
+		struct zip *zip = ipsw_zip_open_path(ipsw->path, 0, &err);
 		if (zip == NULL) {
 			logger(LL_ERROR, "zip_open: %s: %d\n", ipsw->path, err);
 			return NULL;
@@ -1459,7 +1689,7 @@ ipsw_file_handle_t ipsw_file_open(ipsw_archive_t ipsw, const char* path)
 	} else {
 		struct stat st;
 		char *filepath = build_path(ipsw->path, path);
-		handle->file = fopen(filepath, "rb");
+		handle->file = ipsw_fopen_path(filepath, "rb");
 		free(filepath);
 		if (!handle->file) {
 			logger(LL_ERROR, "fopen: %s could not be opened\n", path);
