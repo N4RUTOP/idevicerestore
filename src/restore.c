@@ -3998,15 +3998,19 @@ static int cpio_send_file(idevice_connection_t connection, const char *name, str
 static int restore_bootability_send_one(void *ctx, ipsw_archive_t ipsw, const char *name, struct stat *stat)
 {
 	idevice_connection_t connection = (idevice_connection_t)ctx;
-	const char *prefix = "BootabilityBundle/Restore/Bootability/";
+	const char *prefix_v1 = "BootabilityBundle/Restore/Bootability/";
+	const char *prefix_v2 = "BootabilityBundleV2/Restore/Bootability/";
 	const char *subpath;
 
-	if (!strcmp(name, "BootabilityBundle/Restore/Firmware/Bootability.dmg.trustcache")) {
+	if (!strcmp(name, "BootabilityBundle/Restore/Firmware/Bootability.dmg.trustcache") ||
+	    !strcmp(name, "BootabilityBundleV2/Restore/Firmware/Bootability.dmg.trustcache")) {
 		subpath = "Bootability.trustcache";
-	} else if (strncmp(name, prefix, strlen(prefix))) {
-		return 0;
+	} else if (!strncmp(name, prefix_v1, strlen(prefix_v1))) {
+		subpath = name + strlen(prefix_v1);
+	} else if (!strncmp(name, prefix_v2, strlen(prefix_v2))) {
+		subpath = name + strlen(prefix_v2);
 	} else {
-		subpath = name + strlen(prefix);
+		return 0;
 	}
 
 	logger(LL_DEBUG, "BootabilityBundle send m=%07o s=%10ld %s\n", stat->st_mode, (long)stat->st_size, subpath);
@@ -4827,6 +4831,13 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 			}
 		}
 
+		else if (!strcmp(type, "SourceBootObjectV5")) {
+			if (restore_send_source_boot_object_v4(client, message) < 0) {
+				logger(LL_ERROR, "Unable to send SourceBootObjectV5\n");
+				return -1;
+			}
+		}
+
 		else if (!strcmp(type, "RecoveryOSLocalPolicy")) {
 			if (restore_send_restore_local_policy(client, message) < 0) {
 				logger(LL_ERROR, "Unable to send RecoveryOSLocalPolicy\n");
@@ -4933,6 +4944,13 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 			}
 		}
 
+		else if (!strcmp(type, "DeviceRestoreInfoPreflight")) {
+			if(restore_send_firmware_updater_preflight(client, message) < 0) {
+				logger(LL_ERROR, "Unable to send DeviceRestoreInfoPreflight\n");
+				return -1;
+			}
+		}
+
 		else if (!strcmp(type, "PersonalizedData")) {
 			if(restore_send_image_data(client, message, "ImageList", NULL, "ImageData") < 0) {
 				logger(LL_ERROR, "Unable to send Personalized data\n");
@@ -4947,7 +4965,7 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 			}
 		}
 
-		else if (!strcmp(type, "BootabilityBundle")) {
+		else if (!strcmp(type, "BootabilityBundle") || !strcmp(type, "BootabilityBundleV2")) {
 			if (restore_send_bootability_bundle_data(client, message) < 0) {
 				logger(LL_ERROR, "Unable to send BootabilityBundle data\n");
 				return -1;
@@ -5150,10 +5168,12 @@ plist_t restore_supported_data_types()
 	plist_dict_set_item(dict, "BasebandStackData", plist_new_bool(0));
 	plist_dict_set_item(dict, "BasebandUpdaterOutputData", plist_new_bool(0));
 	plist_dict_set_item(dict, "BootabilityBundle", plist_new_bool(0));
+	plist_dict_set_item(dict, "BootabilityBundleV2", plist_new_bool(0));
 	plist_dict_set_item(dict, "BuildIdentityDict", plist_new_bool(0));
 	plist_dict_set_item(dict, "BuildIdentityDictV2", plist_new_bool(0));
 	plist_dict_set_item(dict, "Cryptex1LocalPolicy", plist_new_bool(1));
 	plist_dict_set_item(dict, "DataType", plist_new_bool(0));
+	plist_dict_set_item(dict, "DeviceRestoreInfoPreflight", plist_new_bool(0));
 	plist_dict_set_item(dict, "DiagData", plist_new_bool(0));
 	plist_dict_set_item(dict, "EANData", plist_new_bool(0));
 	plist_dict_set_item(dict, "FDRMemoryCommit", plist_new_bool(0));
@@ -5201,6 +5221,7 @@ plist_t restore_supported_data_types()
 	plist_dict_set_item(dict, "S3EOverride", plist_new_bool(0));
 	plist_dict_set_item(dict, "SourceBootObjectV3", plist_new_bool(0));
 	plist_dict_set_item(dict, "SourceBootObjectV4", plist_new_bool(0));
+	plist_dict_set_item(dict, "SourceBootObjectV5", plist_new_bool(0));
 	plist_dict_set_item(dict, "SsoServiceTicket", plist_new_bool(0));
 	plist_dict_set_item(dict, "StockholmPostflight", plist_new_bool(0));
 	plist_dict_set_item(dict, "SystemImageCanonicalMetadata", plist_new_bool(0));
@@ -5232,6 +5253,7 @@ plist_t restore_supported_message_types()
 	plist_dict_set_item(dict, "ProvisioningStatusMsg", plist_new_bool(0));
 	plist_dict_set_item(dict, "ReceivedFinalStatusMsg", plist_new_bool(0));
 	plist_dict_set_item(dict, "RestoreAttestation", plist_new_bool(1));
+	plist_dict_set_item(dict, "RestoreProtocol", plist_new_bool(1));
 	plist_dict_set_item(dict, "RestoredCrash", plist_new_bool(1));
 	plist_dict_set_item(dict, "StatusMsg", plist_new_bool(0));
 	return dict;
@@ -5722,6 +5744,11 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 
 		else if (!strcmp(type, "RestoreAttestation")) {
 			err = restore_handle_restore_attestation(client, message);
+		}
+
+		else if (!strcmp(type, "RestoreProtocol")) {
+			logger(LL_DEBUG, "RestoreProtocol message:\n");
+			logger_dump_plist(LL_DEBUG, message, 1);
 		}
 
 		// there might be some other message types i'm not aware of, but I think
