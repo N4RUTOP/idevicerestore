@@ -3998,15 +3998,19 @@ static int cpio_send_file(idevice_connection_t connection, const char *name, str
 static int restore_bootability_send_one(void *ctx, ipsw_archive_t ipsw, const char *name, struct stat *stat)
 {
 	idevice_connection_t connection = (idevice_connection_t)ctx;
-	const char *prefix = "BootabilityBundle/Restore/Bootability/";
+	const char *prefix_v1 = "BootabilityBundle/Restore/Bootability/";
+	const char *prefix_v2 = "BootabilityBundleV2/Restore/Bootability/";
 	const char *subpath;
 
-	if (!strcmp(name, "BootabilityBundle/Restore/Firmware/Bootability.dmg.trustcache")) {
+	if (!strcmp(name, "BootabilityBundle/Restore/Firmware/Bootability.dmg.trustcache") ||
+	    !strcmp(name, "BootabilityBundleV2/Restore/Firmware/Bootability.dmg.trustcache")) {
 		subpath = "Bootability.trustcache";
-	} else if (strncmp(name, prefix, strlen(prefix))) {
-		return 0;
+	} else if (!strncmp(name, prefix_v1, strlen(prefix_v1))) {
+		subpath = name + strlen(prefix_v1);
+	} else if (!strncmp(name, prefix_v2, strlen(prefix_v2))) {
+		subpath = name + strlen(prefix_v2);
 	} else {
-		subpath = name + strlen(prefix);
+		return 0;
 	}
 
 	logger(LL_DEBUG, "BootabilityBundle send m=%07o s=%10ld %s\n", stat->st_mode, (long)stat->st_size, subpath);
@@ -4827,6 +4831,13 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 			}
 		}
 
+		else if (!strcmp(type, "SourceBootObjectV5")) {
+			if (restore_send_source_boot_object_v4(client, message) < 0) {
+				logger(LL_ERROR, "Unable to send SourceBootObjectV5\n");
+				return -1;
+			}
+		}
+
 		else if (!strcmp(type, "RecoveryOSLocalPolicy")) {
 			if (restore_send_restore_local_policy(client, message) < 0) {
 				logger(LL_ERROR, "Unable to send RecoveryOSLocalPolicy\n");
@@ -4933,6 +4944,13 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 			}
 		}
 
+		else if (!strcmp(type, "DeviceRestoreInfoPreflight")) {
+			if(restore_send_firmware_updater_preflight(client, message) < 0) {
+				logger(LL_ERROR, "Unable to send DeviceRestoreInfoPreflight\n");
+				return -1;
+			}
+		}
+
 		else if (!strcmp(type, "PersonalizedData")) {
 			if(restore_send_image_data(client, message, "ImageList", NULL, "ImageData") < 0) {
 				logger(LL_ERROR, "Unable to send Personalized data\n");
@@ -4947,7 +4965,7 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 			}
 		}
 
-		else if (!strcmp(type, "BootabilityBundle")) {
+		else if (!strcmp(type, "BootabilityBundle") || !strcmp(type, "BootabilityBundleV2")) {
 			if (restore_send_bootability_bundle_data(client, message) < 0) {
 				logger(LL_ERROR, "Unable to send BootabilityBundle data\n");
 				return -1;
@@ -5150,10 +5168,12 @@ plist_t restore_supported_data_types()
 	plist_dict_set_item(dict, "BasebandStackData", plist_new_bool(0));
 	plist_dict_set_item(dict, "BasebandUpdaterOutputData", plist_new_bool(0));
 	plist_dict_set_item(dict, "BootabilityBundle", plist_new_bool(0));
+	plist_dict_set_item(dict, "BootabilityBundleV2", plist_new_bool(0));
 	plist_dict_set_item(dict, "BuildIdentityDict", plist_new_bool(0));
 	plist_dict_set_item(dict, "BuildIdentityDictV2", plist_new_bool(0));
 	plist_dict_set_item(dict, "Cryptex1LocalPolicy", plist_new_bool(1));
 	plist_dict_set_item(dict, "DataType", plist_new_bool(0));
+	plist_dict_set_item(dict, "DeviceRestoreInfoPreflight", plist_new_bool(0));
 	plist_dict_set_item(dict, "DiagData", plist_new_bool(0));
 	plist_dict_set_item(dict, "EANData", plist_new_bool(0));
 	plist_dict_set_item(dict, "FDRMemoryCommit", plist_new_bool(0));
@@ -5201,6 +5221,7 @@ plist_t restore_supported_data_types()
 	plist_dict_set_item(dict, "S3EOverride", plist_new_bool(0));
 	plist_dict_set_item(dict, "SourceBootObjectV3", plist_new_bool(0));
 	plist_dict_set_item(dict, "SourceBootObjectV4", plist_new_bool(0));
+	plist_dict_set_item(dict, "SourceBootObjectV5", plist_new_bool(0));
 	plist_dict_set_item(dict, "SsoServiceTicket", plist_new_bool(0));
 	plist_dict_set_item(dict, "StockholmPostflight", plist_new_bool(0));
 	plist_dict_set_item(dict, "SystemImageCanonicalMetadata", plist_new_bool(0));
@@ -5232,6 +5253,7 @@ plist_t restore_supported_message_types()
 	plist_dict_set_item(dict, "ProvisioningStatusMsg", plist_new_bool(0));
 	plist_dict_set_item(dict, "ReceivedFinalStatusMsg", plist_new_bool(0));
 	plist_dict_set_item(dict, "RestoreAttestation", plist_new_bool(1));
+	plist_dict_set_item(dict, "RestoreProtocol", plist_new_bool(1));
 	plist_dict_set_item(dict, "RestoredCrash", plist_new_bool(1));
 	plist_dict_set_item(dict, "StatusMsg", plist_new_bool(0));
 	return dict;
@@ -5246,6 +5268,29 @@ static void rp_log_cb(reverse_proxy_client_t client, const char* log_msg, void* 
 static void rp_status_cb(reverse_proxy_client_t client, reverse_proxy_status_t status, const char* status_msg, void* user_data)
 {
 	logger(LL_VERBOSE, "ReverseProxy[%s]: (status=%d) %s\n", (reverse_proxy_get_type(client) == RP_TYPE_CTRL) ? "Ctrl" : "Conn", status, status_msg);
+}
+
+static int restore_wait_for_reconnect(struct idevicerestore_client_t* client)
+{
+	int i;
+	logger(LL_INFO, "Device is not responding, waiting for it to reappear on USB...\n");
+	if (client->restore->client) {
+		restored_client_free(client->restore->client);
+		client->restore->client = NULL;
+	}
+	if (client->restore->device) {
+		idevice_free(client->restore->device);
+		client->restore->device = NULL;
+	}
+	for (i = 0; i < 10; i++) {
+		sleep(1);
+		if (restore_open_with_timeout(client) == 0) {
+			logger(LL_INFO, "Device reappeared, reconnected to restored\n");
+			return 0;
+		}
+	}
+	logger(LL_ERROR, "Device did not reappear after 10 seconds\n");
+	return -1;
 }
 #endif
 
@@ -5346,29 +5391,41 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 #ifdef HAVE_REVERSE_PROXY
 	logger(LL_INFO, "Starting Reverse Proxy\n");
 	reverse_proxy_client_t rproxy = NULL;
-	if (reverse_proxy_client_create_with_port(device, &rproxy, REVERSE_PROXY_DEFAULT_PORT) != REVERSE_PROXY_E_SUCCESS) {
-		logger(LL_ERROR, "Could not create Reverse Proxy\n");
-	} else {
-		if (client->flags & FLAG_DEBUG) {
-			reverse_proxy_client_set_log_callback(rproxy, rp_log_cb, NULL);
-		}
-		reverse_proxy_client_set_status_callback(rproxy, rp_status_cb, NULL);
-		if (reverse_proxy_client_start_proxy(rproxy, 2) != REVERSE_PROXY_E_SUCCESS) {
-			logger(LL_ERROR, "Device didn't accept new reverse proxy protocol, trying to use old one\n");
-			reverse_proxy_client_free(rproxy);
-			rproxy = NULL;
-			if (reverse_proxy_client_create_with_port(device, &rproxy, REVERSE_PROXY_DEFAULT_PORT) != REVERSE_PROXY_E_SUCCESS) {
-				logger(LL_ERROR, "Could not create Reverse Proxy\n");
-			} else {
-				if (client->flags & FLAG_DEBUG) {
-					reverse_proxy_client_set_log_callback(rproxy, rp_log_cb, NULL);
-				}
-				reverse_proxy_client_set_status_callback(rproxy, rp_status_cb, NULL);
-				if (reverse_proxy_client_start_proxy(rproxy, 1) != REVERSE_PROXY_E_SUCCESS) {
-					logger(LL_ERROR, "ReverseProxy: Device didn't accept old protocol, giving up\n");
+	int rp_attempt;
+	for (rp_attempt = 0; rp_attempt < 2; rp_attempt++) {
+		if (reverse_proxy_client_create_with_port(device, &rproxy, REVERSE_PROXY_DEFAULT_PORT) != REVERSE_PROXY_E_SUCCESS) {
+			logger(LL_ERROR, "Could not create Reverse Proxy\n");
+		} else {
+			if (client->flags & FLAG_DEBUG) {
+				reverse_proxy_client_set_log_callback(rproxy, rp_log_cb, NULL);
+			}
+			reverse_proxy_client_set_status_callback(rproxy, rp_status_cb, NULL);
+			if (reverse_proxy_client_start_proxy(rproxy, 2) != REVERSE_PROXY_E_SUCCESS) {
+				logger(LL_ERROR, "Device didn't accept new reverse proxy protocol, trying to use old one\n");
+				reverse_proxy_client_free(rproxy);
+				rproxy = NULL;
+				if (reverse_proxy_client_create_with_port(device, &rproxy, REVERSE_PROXY_DEFAULT_PORT) != REVERSE_PROXY_E_SUCCESS) {
+					logger(LL_ERROR, "Could not create Reverse Proxy\n");
+				} else {
+					if (client->flags & FLAG_DEBUG) {
+						reverse_proxy_client_set_log_callback(rproxy, rp_log_cb, NULL);
+					}
+					reverse_proxy_client_set_status_callback(rproxy, rp_status_cb, NULL);
+					if (reverse_proxy_client_start_proxy(rproxy, 1) != REVERSE_PROXY_E_SUCCESS) {
+						logger(LL_ERROR, "ReverseProxy: Device didn't accept old protocol, giving up\n");
+					}
 				}
 			}
 		}
+		if (rproxy) {
+			break;
+		}
+		if (rp_attempt == 0 && restore_wait_for_reconnect(client) == 0) {
+			device = client->restore->device;
+			restore = client->restore->client;
+			continue;
+		}
+		break;
 	}
 #else
 	fdr_client_t fdr_control_channel = NULL;
@@ -5722,6 +5779,11 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 
 		else if (!strcmp(type, "RestoreAttestation")) {
 			err = restore_handle_restore_attestation(client, message);
+		}
+
+		else if (!strcmp(type, "RestoreProtocol")) {
+			logger(LL_DEBUG, "RestoreProtocol message:\n");
+			logger_dump_plist(LL_DEBUG, message, 1);
 		}
 
 		// there might be some other message types i'm not aware of, but I think
