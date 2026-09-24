@@ -53,6 +53,7 @@
 #include "ipsw.h"
 #include "restore.h"
 #include "common.h"
+#include "download.h"
 #include "endianness.h"
 
 #define CREATE_PARTITION_MAP          11
@@ -2326,7 +2327,7 @@ static int restore_send_baseband_data(struct idevicerestore_client_t* client, pl
 		}
 		logger(LL_INFO, "Sending Baseband TSS request...\n");
 		logger_dump_plist(LL_DEBUG, request, 0);
-		response = tss_request_send(request, client->tss_url);
+		response = idevicerestore_tss_request_send(request, client->tss_url);
 		plist_free(request);
 		plist_free(parameters);
 		if (response == NULL) {
@@ -2706,7 +2707,7 @@ static plist_t restore_get_se_firmware_data(struct idevicerestore_client_t* clie
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending SE TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch SE ticket\n");
@@ -2802,7 +2803,7 @@ static plist_t restore_get_savage_firmware_data(struct idevicerestore_client_t* 
 	logger(LL_DEBUG, "%s: using %s\n", __func__, comp_name);
 
 	logger(LL_INFO, "Sending Savage TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Savage ticket\n");
@@ -2912,7 +2913,7 @@ static plist_t restore_get_yonkers_firmware_data(struct idevicerestore_client_t*
 	logger(LL_DEBUG, "%s: using %s\n", __func__, comp_name);
 
 	logger(LL_INFO, "Sending Yonkers TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Yonkers ticket\n");
@@ -3018,7 +3019,7 @@ static plist_t restore_get_rose_firmware_data(struct idevicerestore_client_t* cl
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending Rose TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Rose ticket\n");
@@ -3164,7 +3165,7 @@ static plist_t restore_get_veridian_firmware_data(struct idevicerestore_client_t
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending Veridian TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Veridian ticket\n");
@@ -3276,7 +3277,7 @@ static plist_t restore_get_generic_firmware_data(struct idevicerestore_client_t*
 
 	logger(LL_INFO, "Sending %s TSS request...\n", s_updater_name);
 	logger_dump_plist(LL_DEBUG, request, 0);
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch %s ticket\n", s_updater_name);
@@ -3338,7 +3339,7 @@ static plist_t restore_get_tcon_firmware_data(struct idevicerestore_client_t* cl
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending Baobab TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Baobab ticket\n");
@@ -3484,7 +3485,7 @@ static plist_t restore_get_timer_firmware_data(struct idevicerestore_client_t* c
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending %s TSS request...\n", ticket_name);
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch %s\n", ticket_name);
@@ -3668,7 +3669,7 @@ static plist_t restore_get_cryptex1_firmware_data(struct idevicerestore_client_t
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending %s TSS request...\n", s_updater_name);
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch %s ticket\n", s_updater_name);

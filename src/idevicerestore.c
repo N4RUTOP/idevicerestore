@@ -812,7 +812,7 @@ int idevicerestore_start(struct idevicerestore_client_t* client)
 		plist_free(parameters);
 
 		// send request and grab response
-		plist_t response = tss_request_send(request, client->tss_url);
+		plist_t response = idevicerestore_tss_request_send(request, client->tss_url);
 		plist_free(request);
 		if (response == NULL) {
 			logger(LL_ERROR, "Unable to send TSS request\n");
@@ -2547,7 +2547,7 @@ int get_tss_response(struct idevicerestore_client_t* client, plist_t build_ident
 	}
 
 	/* send request and grab response */
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	if (response == NULL) {
 		logger(LL_INFO, "ERROR: Unable to send TSS request\n");
 		plist_free(request);
@@ -2641,7 +2641,7 @@ int get_recoveryos_root_ticket_tss_response(struct idevicerestore_client_t* clie
 	}
 
 	/* send request and grab response */
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	if (response == NULL) {
 		logger(LL_INFO, "ERROR: Unable to send TSS request\n");
 		plist_free(request);
@@ -2730,7 +2730,7 @@ int get_recovery_os_local_policy_tss_response(
 	}
 
 	/* send request and grab response */
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	if (response == NULL) {
 		logger(LL_INFO, "ERROR: Unable to send TSS request\n");
 		plist_free(request);
@@ -2815,7 +2815,7 @@ int get_local_policy_tss_response(struct idevicerestore_client_t* client, plist_
 	}
 
 	/* send request and grab response */
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	if (response == NULL) {
 		logger(LL_INFO, "ERROR: Unable to send TSS request\n");
 		plist_free(request);

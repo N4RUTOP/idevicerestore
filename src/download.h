@@ -27,9 +27,13 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <plist/plist.h>
 
 int download_to_buffer(const char* url, void** buf, size_t* length);
 int download_to_file(const char* url, const char* filename, int enable_progress);
+
+/* tss_request_send() that also logs why the TSS server refused a request */
+plist_t idevicerestore_tss_request_send(plist_t request, const char* server_url);
 
 #ifdef __cplusplus
 }
