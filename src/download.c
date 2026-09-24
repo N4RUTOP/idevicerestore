@@ -23,9 +23,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
+#include <libtatsu/tss.h>
 
 #include "download.h"
 #include "common.h"
+
+#define TSS_DEFAULT_URL "https://gs.apple.com/TSS/controller?action=2"
 
 typedef struct {
 	int length;
@@ -166,4 +169,86 @@ int download_to_file(const char* url, const char* filename, int enable_progress)
 	}
 
 	return res;
+}
+
+/* libtatsu prints the TSS server's STATUS/MESSAGE for a refused request only on
+ * stderr, and only when its debug level is raised, so the reason never reaches
+ * the log. Send the same request once more (same headers as libtatsu) and log
+ * what the server says. */
+static void tss_log_failure_reason(plist_t request, const char* server_url)
+{
+	char* xml = NULL;
+	uint32_t xml_size = 0;
+	char errbuf[CURL_ERROR_SIZE];
+	long http_code = 0;
+
+	plist_to_xml(request, &xml, &xml_size);
+	if (!xml) {
+		return;
+	}
+	CURL* handle = curl_easy_init();
+	if (handle == NULL) {
+		free(xml);
+		return;
+	}
+
+	curl_response response;
+	response.length = 0;
+	response.content = malloc(1);
+	response.content[0] = '\0';
+	errbuf[0] = '\0';
+
+	struct curl_slist* header = NULL;
+	header = curl_slist_append(header, "Cache-Control: no-cache");
+	header = curl_slist_append(header, "Content-type: text/xml; charset=\"utf-8\"");
+	header = curl_slist_append(header, "Expect:");
+
+	curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0);
+	curl_easy_setopt(handle, CURLOPT_ERRORBUFFER, errbuf);
+	curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, (curl_write_callback)&download_write_buffer_callback);
+	curl_easy_setopt(handle, CURLOPT_WRITEDATA, &response);
+	curl_easy_setopt(handle, CURLOPT_HTTPHEADER, header);
+	curl_easy_setopt(handle, CURLOPT_POSTFIELDS, xml);
+	curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE, (long)xml_size);
+	curl_easy_setopt(handle, CURLOPT_USERAGENT, USER_AGENT_STRING);
+	curl_easy_setopt(handle, CURLOPT_URL, server_url ? server_url : TSS_DEFAULT_URL);
+	curl_easy_setopt(handle, CURLOPT_TIMEOUT, 30L);
+
+	CURLcode res = curl_easy_perform(handle);
+	curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &http_code);
+	curl_slist_free_all(header);
+	curl_easy_cleanup(handle);
+	free(xml);
+
+	const char* status = strstr(response.content, "STATUS=");
+	if (res != CURLE_OK) {
+		logger(LL_ERROR, "TSS server could not be reached: %s\n", errbuf[0] ? errbuf : curl_easy_strerror(res));
+	} else if (status == NULL) {
+		logger(LL_ERROR, "TSS server answered without a status (HTTP %ld, %d bytes)\n", http_code, response.length);
+	} else {
+		int status_code = atoi(status + 7);
+		const char* message = strstr(response.content, "MESSAGE=");
+		int message_len = 0;
+		if (message) {
+			message += 8;
+			message_len = (int)strcspn(message, "&\r\n");
+		} else {
+			message = "";
+		}
+		if (status_code == 0) {
+			logger(LL_WARNING, "TSS server accepted the same request when asked again, the failure was transient\n");
+		} else {
+			logger(LL_ERROR, "TSS server refused the request: STATUS=%d, MESSAGE=%.*s\n", status_code, message_len, message);
+		}
+	}
+	free(response.content);
+}
+
+plist_t idevicerestore_tss_request_send(plist_t request, const char* server_url)
+{
+	plist_t response = tss_request_send(request, server_url);
+	if (response == NULL) {
+		tss_log_failure_reason(request, server_url);
+	}
+	return response;
 }

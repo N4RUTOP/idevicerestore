@@ -33,6 +33,7 @@ extern "C" {
 #define ASR_DEFAULT_PORT 12345
 
 typedef void (*asr_progress_cb_t)(double, void*);
+typedef int (*asr_abort_cb_t)(void*);
 
 struct asr_client {
 	idevice_connection_t connection;
@@ -40,6 +41,8 @@ struct asr_client {
 	int lastprogress;
 	asr_progress_cb_t progress_cb;
 	void* progress_cb_data;
+	asr_abort_cb_t abort_cb;
+	void* abort_cb_data;
 };
 typedef struct asr_client *asr_client_t;
 
@@ -48,6 +51,8 @@ typedef struct ipsw_file_handle* ipsw_file_handle_t;
 
 int asr_open_with_timeout(idevice_t device, asr_client_t* asr, uint16_t port);
 void asr_set_progress_callback(asr_client_t asr, asr_progress_cb_t, void* userdata);
+/* asr_send_payload() stops before the next chunk once the callback returns non-zero */
+void asr_set_abort_callback(asr_client_t asr, asr_abort_cb_t, void* userdata);
 int asr_send(asr_client_t asr, plist_t data);
 int asr_receive(asr_client_t asr, plist_t* data);
 int asr_send_buffer(asr_client_t asr, const void* data, size_t size);

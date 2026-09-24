@@ -53,6 +53,7 @@
 #include "ipsw.h"
 #include "restore.h"
 #include "common.h"
+#include "download.h"
 #include "endianness.h"
 
 #define CREATE_PARTITION_MAP          11
@@ -840,29 +841,29 @@ int restore_handle_status_msg(struct idevicerestore_client_t* client, plist_t ms
 			restore_finished = 1;
 			break;
 		case 0xFFFFFFFFFFFFFFFFLL:
-			logger(LL_INFO, "Status: Verification Error\n");
+			logger(LL_ERROR, "Status: Verification Error\n");
 			break;
 		case 6:
-			logger(LL_INFO, "Status: Disk Failure\n");
+			logger(LL_ERROR, "Status: Disk Failure\n");
 			break;
 		case 14:
-			logger(LL_INFO, "Status: Fail\n");
+			logger(LL_ERROR, "Status: Fail\n");
 			break;
 		case 27:
-			logger(LL_INFO, "Status: Failed to mount filesystems.\n");
+			logger(LL_ERROR, "Status: Failed to mount filesystems.\n");
 			break;
 		case 50:
 		case 51:
-			logger(LL_INFO, "Status: Failed to load SEP Firmware.\n");
+			logger(LL_ERROR, "Status: Failed to load SEP Firmware.\n");
 			break;
 		case 53:
-			logger(LL_INFO, "Status: Failed to recover FDR data.\n");
+			logger(LL_ERROR, "Status: Failed to recover FDR data.\n");
 			break;
 		case 1015:
-			logger(LL_INFO, "Status: X-Gold Baseband Update Failed. Defective Unit?\n");
+			logger(LL_ERROR, "Status: X-Gold Baseband Update Failed. Defective Unit?\n");
 			break;
 		default:
-			logger(LL_INFO, "Unhandled status message (%" PRIu64 ")\n", value);
+			logger(LL_ERROR, "Unhandled status message (%" PRIu64 ")\n", value);
 			logger_dump_plist(LL_VERBOSE, msg, 1);
 			break;
 	}
@@ -1016,6 +1017,12 @@ static void restore_asr_progress_cb(double progress, void* userdata)
 	}
 }
 
+static int restore_asr_abort_cb(void* userdata)
+{
+	struct idevicerestore_client_t* client = (struct idevicerestore_client_t*)userdata;
+	return (client->flags & FLAG_QUIT) != 0;
+}
+
 int restore_send_filesystem(struct idevicerestore_client_t* client, plist_t message)
 {
 	asr_client_t asr = NULL;
@@ -1076,6 +1083,9 @@ int restore_send_filesystem(struct idevicerestore_client_t* client, plist_t mess
 	if (asr_port == ASR_DEFAULT_PORT) {
 		asr_set_progress_callback(asr, restore_asr_progress_cb, client);
 	}
+	// The filesystem usually streams on an async request thread; stop it when the
+	// restore is quitting instead of pushing the rest of the image to a failed restore.
+	asr_set_abort_callback(asr, restore_asr_abort_cb, client);
 
 	// once the target filesystem has been validated, ASR then requests the
 	// entire filesystem to be sent.
@@ -2317,7 +2327,7 @@ static int restore_send_baseband_data(struct idevicerestore_client_t* client, pl
 		}
 		logger(LL_INFO, "Sending Baseband TSS request...\n");
 		logger_dump_plist(LL_DEBUG, request, 0);
-		response = tss_request_send(request, client->tss_url);
+		response = idevicerestore_tss_request_send(request, client->tss_url);
 		plist_free(request);
 		plist_free(parameters);
 		if (response == NULL) {
@@ -2697,7 +2707,7 @@ static plist_t restore_get_se_firmware_data(struct idevicerestore_client_t* clie
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending SE TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch SE ticket\n");
@@ -2793,7 +2803,7 @@ static plist_t restore_get_savage_firmware_data(struct idevicerestore_client_t* 
 	logger(LL_DEBUG, "%s: using %s\n", __func__, comp_name);
 
 	logger(LL_INFO, "Sending Savage TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Savage ticket\n");
@@ -2903,7 +2913,7 @@ static plist_t restore_get_yonkers_firmware_data(struct idevicerestore_client_t*
 	logger(LL_DEBUG, "%s: using %s\n", __func__, comp_name);
 
 	logger(LL_INFO, "Sending Yonkers TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Yonkers ticket\n");
@@ -3009,7 +3019,7 @@ static plist_t restore_get_rose_firmware_data(struct idevicerestore_client_t* cl
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending Rose TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Rose ticket\n");
@@ -3155,7 +3165,7 @@ static plist_t restore_get_veridian_firmware_data(struct idevicerestore_client_t
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending Veridian TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Veridian ticket\n");
@@ -3267,7 +3277,7 @@ static plist_t restore_get_generic_firmware_data(struct idevicerestore_client_t*
 
 	logger(LL_INFO, "Sending %s TSS request...\n", s_updater_name);
 	logger_dump_plist(LL_DEBUG, request, 0);
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch %s ticket\n", s_updater_name);
@@ -3329,7 +3339,7 @@ static plist_t restore_get_tcon_firmware_data(struct idevicerestore_client_t* cl
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending Baobab TSS request...\n");
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch Baobab ticket\n");
@@ -3475,7 +3485,7 @@ static plist_t restore_get_timer_firmware_data(struct idevicerestore_client_t* c
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending %s TSS request...\n", ticket_name);
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch %s\n", ticket_name);
@@ -3659,7 +3669,7 @@ static plist_t restore_get_cryptex1_firmware_data(struct idevicerestore_client_t
 	plist_free(parameters);
 
 	logger(LL_INFO, "Sending %s TSS request...\n", s_updater_name);
-	response = tss_request_send(request, client->tss_url);
+	response = idevicerestore_tss_request_send(request, client->tss_url);
 	plist_free(request);
 	if (response == NULL) {
 		logger(LL_ERROR, "Unable to fetch %s ticket\n", s_updater_name);
@@ -5037,9 +5047,18 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 	return 0;
 }
 
+// Async data requests run on detached threads that use the client, its restore
+// connection and the IPSW. restore_device() counts them so it can wait for the
+// last one before it tears those down.
+struct _restore_async_tracker {
+	mutex_t mutex;
+	int running;
+};
+
 struct _restore_async_args {
 	struct idevicerestore_client_t* client;
 	plist_t message;
+	struct _restore_async_tracker* tracker;
 };
 
 static void* _restore_handle_async_data_request(void* args)
@@ -5047,6 +5066,7 @@ static void* _restore_handle_async_data_request(void* args)
 	struct _restore_async_args* async_args = (struct _restore_async_args*)args;
 	struct idevicerestore_client_t* client = async_args->client;
 	plist_t message = async_args->message;
+	struct _restore_async_tracker* tracker = async_args->tracker;
 	free(async_args);
 
 	int err = restore_handle_data_request_msg(client, message);
@@ -5056,7 +5076,29 @@ static void* _restore_handle_async_data_request(void* args)
 	}
 
 	plist_free(message);
+
+	mutex_lock(&tracker->mutex);
+	tracker->running--;
+	mutex_unlock(&tracker->mutex);
 	return NULL;
+}
+
+static void _restore_wait_for_async_data_requests(struct _restore_async_tracker* tracker)
+{
+	int announced = 0;
+	while (1) {
+		mutex_lock(&tracker->mutex);
+		int running = tracker->running;
+		mutex_unlock(&tracker->mutex);
+		if (running <= 0) {
+			break;
+		}
+		if (!announced) {
+			logger(LL_INFO, "Waiting for %d pending data request(s) to finish...\n", running);
+			announced = 1;
+		}
+		sleep(1);
+	}
 }
 
 static int restore_handle_restored_crash(struct idevicerestore_client_t* client, plist_t message)
@@ -5619,6 +5661,10 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 	plist_free(opts);
 	idevicerestore_progress(client, RESTORE_STEP_PREPARE, 1.0);
 
+	struct _restore_async_tracker async_tracker;
+	mutex_init(&async_tracker.mutex);
+	async_tracker.running = 0;
+
 	// this is the restore process loop, it reads each message in from
 	// restored and passes that data on to it's specific handler
 	while (!(client->flags & FLAG_QUIT)) {
@@ -5627,10 +5673,12 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 			err = 0;
 		}
 		// finally, if any of these message handlers returned -1 then we encountered
-		// an unrecoverable error, so we need to bail.
+		// an unrecoverable error, so we need to bail. Leave right away: handling
+		// another message would overwrite err and report the restore as a success.
 		if (err < 0) {
 			logger(LL_ERROR, "Unable to successfully restore device\n");
 			client->flags |= FLAG_QUIT;
+			break;
 		}
 
 		restore_error = restored_receive(restore, &message);
@@ -5676,7 +5724,15 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 			struct _restore_async_args* args = (struct _restore_async_args*)malloc(sizeof(struct _restore_async_args));
 			args->client = client;
 			args->message = plist_copy(message);
+			args->tracker = &async_tracker;
+			mutex_lock(&async_tracker.mutex);
+			async_tracker.running++;
+			mutex_unlock(&async_tracker.mutex);
 			if (thread_new(&t, _restore_handle_async_data_request, args) < 0) {
+				mutex_lock(&async_tracker.mutex);
+				async_tracker.running--;
+				mutex_unlock(&async_tracker.mutex);
+				plist_free(args->message);
 				free(args);
 				logger(LL_ERROR, "Failed to start async data request handler thread!\n");
 				err = -1;
@@ -5797,6 +5853,13 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 		plist_free(message);
 		message = NULL;
 	}
+
+	// Some exits (a read error, a malformed checkpoint) leave FLAG_QUIT unset;
+	// set it so a filesystem transfer still running stops at its next chunk.
+	client->flags |= FLAG_QUIT;
+	_restore_wait_for_async_data_requests(&async_tracker);
+	mutex_destroy(&async_tracker.mutex);
+
 	if (client->async_err != 0) {
 		err = client->async_err;
 	}
