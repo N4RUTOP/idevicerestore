@@ -40,6 +40,8 @@ void logger(enum loglevel level, const char *fmt, ...) __attribute__ ((format (p
 const char* logger_get_error(void);
 int logger_set_logfile(const char* path);
 void logger_set_print_func(logger_print_func func);
+/* highest level handed to the print function (LL_INFO by default) */
+void logger_set_print_level(enum loglevel level);
 void logger_dump_hex(enum loglevel level, const void* buf, size_t len);
 void logger_dump_plist(enum loglevel level, plist_t plist, int human_readable);
 

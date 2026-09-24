@@ -245,3 +245,8 @@ void logger_set_print_func(logger_print_func func)
 {
 	print_func = func;
 }
+
+void logger_set_print_level(enum loglevel level)
+{
+	print_level = level;
+}

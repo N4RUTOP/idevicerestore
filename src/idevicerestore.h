@@ -90,6 +90,17 @@ extern const uint32_t lpol_file_length;
 typedef void (*idevicerestore_progress_cb_t)(int step, double step_progress, void* userdata);
 typedef void (*idevicerestore_log_cb_t)(const char* message, void* userdata);
 
+/* message levels passed to idevicerestore_log_level_cb_t */
+enum {
+	IDEVICERESTORE_LOG_ERROR = 0,
+	IDEVICERESTORE_LOG_WARNING,
+	IDEVICERESTORE_LOG_NOTICE,
+	IDEVICERESTORE_LOG_INFO,
+	IDEVICERESTORE_LOG_VERBOSE,
+	IDEVICERESTORE_LOG_DEBUG
+};
+typedef void (*idevicerestore_log_level_cb_t)(int level, const char* message, void* userdata);
+
 // ********* Exported API *********
 IDEVICERESTORE_API struct idevicerestore_client_t* idevicerestore_client_new(void);
 IDEVICERESTORE_API void idevicerestore_client_free(struct idevicerestore_client_t* client);
@@ -101,6 +112,9 @@ IDEVICERESTORE_API void idevicerestore_set_ipsw(struct idevicerestore_client_t* 
 IDEVICERESTORE_API void idevicerestore_set_cache_path(struct idevicerestore_client_t* client, const char* path);
 IDEVICERESTORE_API void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client, idevicerestore_progress_cb_t cbfunc, void* userdata);
 IDEVICERESTORE_API void idevicerestore_set_log_callback(struct idevicerestore_client_t* client, idevicerestore_log_cb_t cbfunc, void* userdata);
+/* Like idevicerestore_set_log_callback(), but passes each message's IDEVICERESTORE_LOG_* level
+ * and also delivers verbose messages (restore checkpoints). The two callbacks replace each other. */
+IDEVICERESTORE_API void idevicerestore_set_log_level_callback(struct idevicerestore_client_t* client, idevicerestore_log_level_cb_t cbfunc, void* userdata);
 IDEVICERESTORE_API void idevicerestore_set_use_internal_device_event(struct idevicerestore_client_t* client, uint8_t use_internal);
 
 IDEVICERESTORE_API int idevicerestore_start(struct idevicerestore_client_t* client);

@@ -1739,22 +1739,39 @@ void idevicerestore_set_progress_callback(struct idevicerestore_client_t* client
 }
 
 static idevicerestore_log_cb_t idevicerestore_log_callback = NULL;
+static idevicerestore_log_level_cb_t idevicerestore_log_level_callback = NULL;
 static void* idevicerestore_log_callback_data = NULL;
 
 static void idevicerestore_log_callback_adapter(enum loglevel level, const char* fmt, va_list ap)
 {
-	(void)level;
 	char message[4096];
 	vsnprintf(message, sizeof(message), fmt, ap);
-	idevicerestore_log_callback(message, idevicerestore_log_callback_data);
+	if (idevicerestore_log_level_callback) {
+		idevicerestore_log_level_callback((int)level, message, idevicerestore_log_callback_data);
+	} else if (idevicerestore_log_callback) {
+		idevicerestore_log_callback(message, idevicerestore_log_callback_data);
+	}
 }
 
 void idevicerestore_set_log_callback(struct idevicerestore_client_t* client, idevicerestore_log_cb_t cbfunc, void* userdata)
 {
 	if (!client)
 		return;
+	idevicerestore_log_level_callback = NULL;
 	idevicerestore_log_callback = cbfunc;
 	idevicerestore_log_callback_data = userdata;
+	logger_set_print_level(LL_INFO);
+	logger_set_print_func(cbfunc ? idevicerestore_log_callback_adapter : NULL);
+}
+
+void idevicerestore_set_log_level_callback(struct idevicerestore_client_t* client, idevicerestore_log_level_cb_t cbfunc, void* userdata)
+{
+	if (!client)
+		return;
+	idevicerestore_log_callback = NULL;
+	idevicerestore_log_level_callback = cbfunc;
+	idevicerestore_log_callback_data = userdata;
+	logger_set_print_level(cbfunc ? LL_VERBOSE : LL_INFO);
 	logger_set_print_func(cbfunc ? idevicerestore_log_callback_adapter : NULL);
 }
 
