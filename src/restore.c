@@ -841,29 +841,29 @@ int restore_handle_status_msg(struct idevicerestore_client_t* client, plist_t ms
 			restore_finished = 1;
 			break;
 		case 0xFFFFFFFFFFFFFFFFLL:
-			logger(LL_INFO, "Status: Verification Error\n");
+			logger(LL_ERROR, "Status: Verification Error\n");
 			break;
 		case 6:
-			logger(LL_INFO, "Status: Disk Failure\n");
+			logger(LL_ERROR, "Status: Disk Failure\n");
 			break;
 		case 14:
-			logger(LL_INFO, "Status: Fail\n");
+			logger(LL_ERROR, "Status: Fail\n");
 			break;
 		case 27:
-			logger(LL_INFO, "Status: Failed to mount filesystems.\n");
+			logger(LL_ERROR, "Status: Failed to mount filesystems.\n");
 			break;
 		case 50:
 		case 51:
-			logger(LL_INFO, "Status: Failed to load SEP Firmware.\n");
+			logger(LL_ERROR, "Status: Failed to load SEP Firmware.\n");
 			break;
 		case 53:
-			logger(LL_INFO, "Status: Failed to recover FDR data.\n");
+			logger(LL_ERROR, "Status: Failed to recover FDR data.\n");
 			break;
 		case 1015:
-			logger(LL_INFO, "Status: X-Gold Baseband Update Failed. Defective Unit?\n");
+			logger(LL_ERROR, "Status: X-Gold Baseband Update Failed. Defective Unit?\n");
 			break;
 		default:
-			logger(LL_INFO, "Unhandled status message (%" PRIu64 ")\n", value);
+			logger(LL_ERROR, "Unhandled status message (%" PRIu64 ")\n", value);
 			logger_dump_plist(LL_VERBOSE, msg, 1);
 			break;
 	}
