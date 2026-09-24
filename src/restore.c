@@ -1016,6 +1016,12 @@ static void restore_asr_progress_cb(double progress, void* userdata)
 	}
 }
 
+static int restore_asr_abort_cb(void* userdata)
+{
+	struct idevicerestore_client_t* client = (struct idevicerestore_client_t*)userdata;
+	return (client->flags & FLAG_QUIT) != 0;
+}
+
 int restore_send_filesystem(struct idevicerestore_client_t* client, plist_t message)
 {
 	asr_client_t asr = NULL;
@@ -1076,6 +1082,9 @@ int restore_send_filesystem(struct idevicerestore_client_t* client, plist_t mess
 	if (asr_port == ASR_DEFAULT_PORT) {
 		asr_set_progress_callback(asr, restore_asr_progress_cb, client);
 	}
+	// The filesystem usually streams on an async request thread; stop it when the
+	// restore is quitting instead of pushing the rest of the image to a failed restore.
+	asr_set_abort_callback(asr, restore_asr_abort_cb, client);
 
 	// once the target filesystem has been validated, ASR then requests the
 	// entire filesystem to be sent.
@@ -5037,9 +5046,18 @@ logger(LL_DEBUG, "%s: type = %s\n", __func__, type);
 	return 0;
 }
 
+// Async data requests run on detached threads that use the client, its restore
+// connection and the IPSW. restore_device() counts them so it can wait for the
+// last one before it tears those down.
+struct _restore_async_tracker {
+	mutex_t mutex;
+	int running;
+};
+
 struct _restore_async_args {
 	struct idevicerestore_client_t* client;
 	plist_t message;
+	struct _restore_async_tracker* tracker;
 };
 
 static void* _restore_handle_async_data_request(void* args)
@@ -5047,6 +5065,7 @@ static void* _restore_handle_async_data_request(void* args)
 	struct _restore_async_args* async_args = (struct _restore_async_args*)args;
 	struct idevicerestore_client_t* client = async_args->client;
 	plist_t message = async_args->message;
+	struct _restore_async_tracker* tracker = async_args->tracker;
 	free(async_args);
 
 	int err = restore_handle_data_request_msg(client, message);
@@ -5056,7 +5075,29 @@ static void* _restore_handle_async_data_request(void* args)
 	}
 
 	plist_free(message);
+
+	mutex_lock(&tracker->mutex);
+	tracker->running--;
+	mutex_unlock(&tracker->mutex);
 	return NULL;
+}
+
+static void _restore_wait_for_async_data_requests(struct _restore_async_tracker* tracker)
+{
+	int announced = 0;
+	while (1) {
+		mutex_lock(&tracker->mutex);
+		int running = tracker->running;
+		mutex_unlock(&tracker->mutex);
+		if (running <= 0) {
+			break;
+		}
+		if (!announced) {
+			logger(LL_INFO, "Waiting for %d pending data request(s) to finish...\n", running);
+			announced = 1;
+		}
+		sleep(1);
+	}
 }
 
 static int restore_handle_restored_crash(struct idevicerestore_client_t* client, plist_t message)
@@ -5619,6 +5660,10 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 	plist_free(opts);
 	idevicerestore_progress(client, RESTORE_STEP_PREPARE, 1.0);
 
+	struct _restore_async_tracker async_tracker;
+	mutex_init(&async_tracker.mutex);
+	async_tracker.running = 0;
+
 	// this is the restore process loop, it reads each message in from
 	// restored and passes that data on to it's specific handler
 	while (!(client->flags & FLAG_QUIT)) {
@@ -5627,10 +5672,12 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 			err = 0;
 		}
 		// finally, if any of these message handlers returned -1 then we encountered
-		// an unrecoverable error, so we need to bail.
+		// an unrecoverable error, so we need to bail. Leave right away: handling
+		// another message would overwrite err and report the restore as a success.
 		if (err < 0) {
 			logger(LL_ERROR, "Unable to successfully restore device\n");
 			client->flags |= FLAG_QUIT;
+			break;
 		}
 
 		restore_error = restored_receive(restore, &message);
@@ -5676,7 +5723,15 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 			struct _restore_async_args* args = (struct _restore_async_args*)malloc(sizeof(struct _restore_async_args));
 			args->client = client;
 			args->message = plist_copy(message);
+			args->tracker = &async_tracker;
+			mutex_lock(&async_tracker.mutex);
+			async_tracker.running++;
+			mutex_unlock(&async_tracker.mutex);
 			if (thread_new(&t, _restore_handle_async_data_request, args) < 0) {
+				mutex_lock(&async_tracker.mutex);
+				async_tracker.running--;
+				mutex_unlock(&async_tracker.mutex);
+				plist_free(args->message);
 				free(args);
 				logger(LL_ERROR, "Failed to start async data request handler thread!\n");
 				err = -1;
@@ -5797,6 +5852,13 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
 		plist_free(message);
 		message = NULL;
 	}
+
+	// Some exits (a read error, a malformed checkpoint) leave FLAG_QUIT unset;
+	// set it so a filesystem transfer still running stops at its next chunk.
+	client->flags |= FLAG_QUIT;
+	_restore_wait_for_async_data_requests(&async_tracker);
+	mutex_destroy(&async_tracker.mutex);
+
 	if (client->async_err != 0) {
 		err = client->async_err;
 	}

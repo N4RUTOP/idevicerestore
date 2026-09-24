@@ -127,6 +127,15 @@ void asr_set_progress_callback(asr_client_t asr, asr_progress_cb_t cbfunc, void*
 	asr->progress_cb_data = userdata;
 }
 
+void asr_set_abort_callback(asr_client_t asr, asr_abort_cb_t cbfunc, void* userdata)
+{
+	if (!asr) {
+		return;
+	}
+	asr->abort_cb = cbfunc;
+	asr->abort_cb_data = userdata;
+}
+
 int asr_receive(asr_client_t asr, plist_t* data)
 {
 	uint32_t size = 0;
@@ -370,6 +379,11 @@ int asr_send_payload(asr_client_t asr, ipsw_file_handle_t file)
 	while(i > 0 && retry >= 0) {
 		uint32_t size = ASR_PAYLOAD_CHUNK_SIZE;
 		uint32_t sendsize = 0;
+
+		if (asr->abort_cb && asr->abort_cb(asr->abort_cb_data)) {
+			logger(LL_WARNING, "Stopping filesystem transfer, the restore is being aborted\n");
+			break;
+		}
 
 		if (i < ASR_PAYLOAD_CHUNK_SIZE) {
 			size = i;
