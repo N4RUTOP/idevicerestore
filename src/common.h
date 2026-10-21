@@ -199,6 +199,19 @@ char *get_temp_filename(const char *prefix);
 
 void idevicerestore_progress(struct idevicerestore_client_t* client, int step, double progress);
 
+/*
+ * Waits while client->mode is still `from`, until a device event changes it,
+ * FLAG_QUIT is set, or timeout_ms elapses. Call it with
+ * client->device_event_mutex held; it returns with the mutex held again.
+ * Returns 1 if the mode left `from`, 0 otherwise.
+ *
+ * Use this instead of a bare cond_wait_timeout() on device_event_cond: on
+ * Windows the glue's cond_t is a counting semaphore that keeps signals sent
+ * while nobody waited, so a single wait can return at once on a stale event,
+ * and cond_wait_timeout() returns there without locking the mutex again.
+ */
+int wait_for_device_mode_change(struct idevicerestore_client_t* client, struct idevicerestore_mode_t* from, unsigned int timeout_ms);
+
 #ifndef HAVE_STRSEP
 char* strsep(char** strp, const char* delim);
 #endif

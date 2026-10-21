@@ -665,6 +665,35 @@ char *get_temp_filename(const char *prefix)
 	return result;
 }
 
+static uint64_t monotonic_ms(void)
+{
+#ifdef _WIN32
+	return GetTickCount64();
+#else
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+#endif
+}
+
+int wait_for_device_mode_change(struct idevicerestore_client_t* client, struct idevicerestore_mode_t* from, unsigned int timeout_ms)
+{
+	uint64_t deadline = monotonic_ms() + timeout_ms;
+	while (client->mode == from && !(client->flags & FLAG_QUIT)) {
+		uint64_t now = monotonic_ms();
+		if (now >= deadline) {
+			break;
+		}
+		/* wake up at least once a second so that FLAG_QUIT is noticed */
+		uint64_t slice = deadline - now;
+		cond_wait_timeout(&client->device_event_cond, &client->device_event_mutex, (unsigned int)((slice > 1000) ? 1000 : slice));
+#ifdef _WIN32
+		mutex_lock(&client->device_event_mutex);
+#endif
+	}
+	return client->mode != from;
+}
+
 void idevicerestore_progress(struct idevicerestore_client_t* client, int step, double progress)
 {
 	if(client && client->progress_cb) {
